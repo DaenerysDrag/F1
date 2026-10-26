@@ -1,41 +1,56 @@
 <div align="center">
 
-# 🏎️ F1 — Race Winner Prediction
+# 🏎️ F1 Race Winner Predictor
 
-**Ranking likely Formula 1 race winners from historical results, with FastF1 and XGBoost.**
+**A machine-learning notebook that ranks the likely winner of any Formula 1 Grand Prix.
+It updates itself through the race weekend: before practice, after practice, after qualifying and after the race.**
 
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DaenerysDrag/F1/blob/main/Austin_GP_Winner_Predictor.ipynb)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DaenerysDrag/F1/blob/main/F1_Race_Winner_Predictor.ipynb)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
-![FastF1](https://img.shields.io/badge/FastF1-3.8-E10600)
-![XGBoost](https://img.shields.io/badge/XGBoost-3.x-189FDD)
-![scikit--learn](https://img.shields.io/badge/scikit--learn-1.6%2B-F7931E?logo=scikitlearn&logoColor=white)
+![FastF1](https://img.shields.io/badge/FastF1-3.9-E10600)
+![XGBoost](https://img.shields.io/badge/XGBoost-2.1-189FDD)
+![Data](https://img.shields.io/badge/data-Jolpica%20%C2%B7%20OpenF1-222222)
 
 </div>
 
 ---
 
-## 🏁 Austin Grand Prix Winner Predictor
-
-[`Austin_GP_Winner_Predictor.ipynb`](Austin_GP_Winner_Predictor.ipynb) predicts who is most likely to win the
-**United States Grand Prix at the Circuit of the Americas (Austin, Texas)**. It uses only results that were
-available *before* the race.
-
-### 2026 prediction
+## 🇲🇽 Next up: Mexico City Grand Prix, 1 November 2026
 
 <p align="center">
-  <img src="assets/austin-2026-ranking.png" alt="Austin 2026 model winner ranking" width="720">
+  <img src="assets/mexico-2026-ranking.png" alt="Mexico City Grand Prix 2026 winner ranking" width="720">
 </p>
 
-| Rank | Driver | Team |
-|:---:|---|---|
-| 🥇 1 | Max Verstappen | Red Bull |
-| 🥈 2 | Andrea Kimi Antonelli | Mercedes |
-| 🥉 3 | George Russell | Mercedes |
+| Rank | Driver | Team | Model score |
+|:---:|---|---|:---:|
+| 🥇 1 | Max Verstappen | Red Bull | 0.35 |
+| 🥈 2 | Andrea Kimi Antonelli | Mercedes | 0.16 |
+| 🥉 3 | Isack Hadjar | Red Bull | 0.16 |
 
-<sub>Race date 2026-10-25 · trained on results through 2026-10-11 · the entry list is taken from the most recent completed race.</sub>
+<sub>Form model, pre-weekend · results through the 2026 United States GP (25 Oct) · entry list taken from the last race's grid.
+This prediction will change after qualifying. Re-run the notebook to update it.</sub>
 
-> **These are rankings, not podium predictions.** The model scores each driver's chance of *winning*.
-> The scores are normalised across the field to add up to 1, but they are **not calibrated probabilities**.
+> Scores rank drivers by their chance of **winning**. They add up to 1 across the field but are **not calibrated
+> probabilities**, and the ranking is not a predicted finishing order.
+
+---
+
+## 🔄 One notebook, four weekend stages
+
+Each time it runs, the notebook downloads the newest data and checks how far the race weekend has got:
+
+| When you run it | What it does |
+|---|---|
+| **Before the weekend** | Predicts with the **form model** (recent driver and team form, plus history at this track). |
+| **After practice** | Adds a **practice pace table**: best lap, gap, and long-run pace with tyre compound for each driver. |
+| **After qualifying** | Switches to the **qualifying model** and uses this weekend's qualifying line-up as the entry list. |
+| **After the race** | Compares the prediction with the result: the top pick's finish, the winner's model rank, and the top 10 side by side. |
+
+**No stale data:** finished seasons are cached because they never change. The **current season is downloaded
+fresh on every run**, so a result published an hour ago is included. Results usually appear within a few hours of a session ending.
+
+**Any race:** change one setting, `CIRCUIT_ID` (`rodriguez` = Mexico City, `interlagos` = São Paulo, `vegas`, `losail`,
+`yas_marina`, `americas` = Austin…). If the code is wrong, the notebook lists the valid ones.
 
 ---
 
@@ -43,69 +58,89 @@ available *before* the race.
 
 ```mermaid
 flowchart LR
-    A[Ergast race results<br/>via FastF1] --> B[Leak-free<br/>rolling features]
-    B --> C[Train on older seasons]
+    A[Jolpica-F1<br/>race + qualifying results] --> B[Leak-free<br/>rolling features]
+    B --> C[Train on<br/>older seasons]
     C --> D[Test on the<br/>previous season]
-    D --> E[Retrain on all<br/>eligible history]
-    E --> F[Rank the<br/>Austin field]
+    D --> E[Retrain on all<br/>history before the race]
+    E --> F[Rank the field]
+    G[OpenF1<br/>practice laps] --> H[Practice pace table]
 ```
 
-1. **Data**: every Grand Prix result from 2022 onward, loaded through FastF1's Ergast interface and
-   cached locally. Sprint races are excluded.
-2. **Features**: computed race by race, using only what was known *before* each race. This prevents
-   lookahead leakage.
-3. **Model**: an `XGBClassifier` trained to answer *"did this driver win this race?"*. Each race's scores
-   are normalised so the field sums to 1.
-4. **Evaluation**: trained on older seasons and tested on the full previous season, which the model never sees during training.
-5. **Prediction**: retrained on all eligible history, then scores the Austin entry list.
+Each input is calculated **only from races before the one being predicted**. A driver's rolling record is
+updated *after* their row is written, so a race can never see its own result.
 
-### The nine features
-
-| Group | Feature | Window |
+| Group | Inputs | Window |
 |---|---|---|
-| **Driver form** | Average finish · average points · win rate · podium rate | Last 5 races |
-| | Number of starts on record (up to 5) | Last 5 races |
+| **Driver form** | Average finish · average points · win rate · podium rate · number of starts on record | Last 5 races |
 | **Team form** | Combined team points · team win rate | Last 5 races |
-| **Austin history** | Average finish at COTA · win rate at COTA | Last 3 visits |
+| **Track history** | Average finish at this circuit · win rate at this circuit | Last 3 visits |
+| **Qualifying** *(qualifying model only)* | Qualifying position this weekend | — |
+
+Both models use the same `XGBClassifier` settings and are trained to answer *"did this driver win this race?"*.
+Training data covers every Grand Prix since 2022. Sprint races are excluded, and 2022 is only used to fill the
+rolling windows.
 
 ---
 
 ## 📊 Honest results
 
-On the **2025 holdout season (24 races)**:
+Both models were trained on 2023–2024 and tested on **all 24 races of 2025**, which they never saw during training.
+They are compared with two simple rules.
 
-| Approach | Winners picked correctly |
-|---|:---:|
-| XGBoost model | **6 / 24 (25.0%)** |
-| Baseline: driver with the best recent average finish | **7 / 24 (29.2%)** |
+| Approach | Winner picked | Hit rate | Winner in top 3 picks |
+|---|:---:|:---:|:---:|
+| Form model | 7 / 24 | 29.2% | 75.0% |
+| Qualifying model | 12 / 24 | 50.0% | 100.0% |
+| Rule: best recent average finish | 7 / 24 | 29.2% | 70.8% |
+| **Rule: pole sitter wins** | **16 / 24** | **66.7%** | 95.8% |
 
-On this test season, the model **does not beat** a simple recent-form rule. That is a useful result in
-itself. With only a few seasons of data and nine features, results-only models mostly learn "who has been
-finishing well lately". Improving on that likely needs new signals, such as qualifying and grid position,
-practice pace, tyre strategy or weather. Those are the next steps for this repo.
+What this shows:
+
+- **Before qualifying**, the form model only matches the simple recent-form rule. Results alone mostly tell you
+  "who has been finishing well lately".
+- **Qualifying position is the strongest single signal.** Adding it lifts the model from 29% to 50%, and the
+  winner was among its top three picks in every 2025 race.
+- **The pole sitter still beat both models in 2025.** The models learned from 2023, when Verstappen won from
+  anywhere on the grid, so they rely on form more than 2025 needed. After qualifying, the notebook prints the pole
+  sitter next to the model's pick.
+
+### Scorecard so far
+
+| Race | Model's top pick | Winner | Winner's rank in model | Pole sitter |
+|---|---|---|:---:|---|
+| United States GP 2026 (Austin) | Max Verstappen (finished P3) | **Andrea Kimi Antonelli** | #2 | Antonelli ✅ |
+| Mexico City GP 2026 | Max Verstappen *(pre-weekend)* | *1 Nov* | — | — |
 
 ---
 
 ## 🚀 Run it
 
-**Google Colab (easiest):** click the **Open in Colab** badge above, then choose **Runtime → Run all**.
+**Google Colab (easiest):** click **Open in Colab** above, set `CIRCUIT_ID`, then choose **Runtime → Run all**.
+Run it again after each session as the weekend goes on.
 
 **Locally:**
 
 ```bash
 git clone https://github.com/DaenerysDrag/F1.git
 cd F1
-pip install "fastf1>=3.6,<4" "scikit-learn>=1.6,<2" "xgboost>=3.0,<4" matplotlib joblib jupyter
-jupyter notebook Austin_GP_Winner_Predictor.ipynb
+pip install "fastf1==3.9.0" "xgboost==2.1.4" matplotlib requests jupyter
+jupyter notebook F1_Race_Winner_Predictor.ipynb
 ```
 
-### Options
+> On macOS, XGBoost needs OpenMP: `brew install libomp`.
 
-- **Change the season:** set `TARGET_YEAR` in the configuration cell. Training starts in 2022 and needs at
-  least four seasons before the target year.
-- **Use an official entry list:** put an `austin_entries.csv` with the columns `driverId, constructorId, driver, team`
-  next to the notebook. It replaces the default, which is the line-up from the most recent completed race.
-  Use it when driver substitutions are confirmed.
+**Use an official entry list:** put an `entries.csv` next to the notebook with the columns
+`driverId, constructorId, driver, team` (and optionally `quali_position`). It replaces the automatic line-up, which is
+useful when a driver substitution is announced before qualifying.
+
+### Data sources
+
+| Source | Used for | Notes |
+|---|---|---|
+| [Jolpica-F1](https://github.com/jolpica/jolpica-f1) (Ergast successor), via FastF1 | Calendar, race results, qualifying results | Free, no key |
+| [OpenF1](https://openf1.org) | Practice lap times, tyre stints, driver names | Free for completed sessions |
+
+FastF1's own lap-timing feed now requires an F1 TV subscription, so practice data comes from OpenF1 instead.
 
 ---
 
@@ -113,19 +148,30 @@ jupyter notebook Austin_GP_Winner_Predictor.ipynb
 
 ```
 F1/
-├── Austin_GP_Winner_Predictor.ipynb   # Data → features → train/test → Austin ranking
+├── F1_Race_Winner_Predictor.ipynb     # The predictor: any race, any weekend stage
 ├── assets/
-│   └── austin-2026-ranking.png        # Prediction chart from the latest run
+│   └── mexico-2026-ranking.png        # Latest prediction chart
+├── archive/
+│   └── Austin_GP_Winner_Predictor.ipynb   # First version (Austin only, form model only)
 └── README.md
 ```
 
 ---
 
+## 🛣️ Ideas for next steps
+
+- Make the qualifying model beat the pole-sitter rule, for example with a "qualified on pole" input or training on more seasons.
+- Add sprint results as form inputs on sprint weekends.
+- Calibrate the scores so they can be read as real probabilities.
+- Track the scorecard for every 2026 race automatically.
+
+---
+
 ## 🙏 Credits
 
-- [FastF1](https://github.com/theOehrly/Fast-F1): F1 data access and caching
-- [Ergast-compatible API](https://github.com/jolpica/jolpica-f1): historical race results
-- [XGBoost](https://xgboost.ai/) and [scikit-learn](https://scikit-learn.org/)
+[FastF1](https://github.com/theOehrly/Fast-F1) · [Jolpica-F1](https://github.com/jolpica/jolpica-f1) ·
+[OpenF1](https://openf1.org) · [XGBoost](https://xgboost.ai/) · [pandas](https://pandas.pydata.org/) ·
+[matplotlib](https://matplotlib.org/)
 
-<sub>This is an unofficial fan project. It is not affiliated with Formula 1, the FIA or any team. F1 and
-Formula 1 are trademarks of Formula One Licensing B.V.</sub>
+<sub>This is an unofficial fan project. It is not affiliated with Formula 1, the FIA or any team. F1 and Formula 1 are
+trademarks of Formula One Licensing B.V.</sub>
